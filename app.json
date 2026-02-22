@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "Subscription Tracker",
+    "slug": "subscription-tracker",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#000000"
+    },
+    "android": {
+      "package": "com.rjt.subs",
+      "adaptiveIcon": {
+        "backgroundColor": "#000000"
+      },
+      "permissions": [
+        "android.permission.NOTIFICATIONS",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.SCHEDULE_EXACT_ALARM"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "color": "#ffffff",
+          "sounds": []
+        }
+      ]
+    ]
+  }
+}
