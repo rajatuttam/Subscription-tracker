@@ -1,5 +1,4 @@
 import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 
 Notifications.setNotificationHandler({
@@ -10,53 +9,55 @@ Notifications.setNotificationHandler({
   }),
 });
 
-export const requestPermissions = async () => {
-  if (!Device.isDevice) return false;
-  const { status: existing } = await Notifications.getPermissionsAsync();
-  let final = existing;
-  if (existing !== 'granted') {
-    const { status } = await Notifications.requestPermissionsAsync();
-    final = status;
-  }
-  if (final !== 'granted') return false;
+export const registerForPushNotificationsAsync = async () => {
+  let token;
   if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('sub-reminders', {
-      name: 'Subscription Reminders',
-      importance: Notifications.AndroidImportance.HIGH,
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'default',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF231F7C',
     });
   }
-  return true;
-};
 
-export const cancelNotification = async (subId) => {
-  const all = await Notifications.getAllScheduledNotificationsAsync();
-  for (const n of all) {
-    if (n.content.data?.subId === subId) {
-      await Notifications.cancelScheduledNotificationAsync(n.identifier);
-    }
+  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  let finalStatus = existingStatus;
+  if (existingStatus !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+  
+  if (finalStatus !== 'granted') {
+    console.log('Failed to get push token for push notification!');
+    return;
   }
 };
 
-export const scheduleRenewalNotification = async (sub) => {
-  await cancelNotification(sub.id);
-  const renewDate = new Date(sub.renewalDate);
-  const notifyDate = new Date(renewDate);
-  notifyDate.setDate(notifyDate.getDate() - 2);
-  notifyDate.setHours(9, 0, 0, 0);
-  if (notifyDate <= new Date()) return;
+export const scheduleRenewalNotification = async (subscriptionName, renewalDate) => {
+  // Parse date string (DD/MM/YYYY) or Date object
+  // Assuming renewalDate is a Date object or ISO string. If it's DD/MM/YYYY, need to parse.
+  
+  const triggerDate = new Date(renewalDate);
+  triggerDate.setHours(9, 0, 0, 0); // Set to 9 AM
+  
+  // Subtract 2 days
+  triggerDate.setDate(triggerDate.getDate() - 2);
+
+  if (triggerDate <= new Date()) {
+    console.log('Notification date is in the past, skipping.');
+    return;
+  }
+
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: '🔔 Renewal Reminder',
-      body: `${sub.name} renews in 2 days — ₹${sub.price}`,
-      data: { subId: sub.id },
-      channelId: 'sub-reminders',
+      title: "Subscription Renewal Alert",
+      body: `${subscriptionName} is renewing in 2 days!`,
+      data: { data: 'goes here' },
     },
-    trigger: { date: notifyDate },
+    trigger: triggerDate,
   });
 };
 
-export const scheduleAllNotifications = async (list) => {
-  for (const sub of list) {
-    await scheduleRenewalNotification(sub);
-  }
-};
+export const cancelAllNotifications = async () => {
+  await Notifications.cancelAllScheduledNotificationsAsync();
+}

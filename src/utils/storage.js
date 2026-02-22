@@ -1,27 +1,47 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const KEY = '@subs_data';
+const STORAGE_KEY = '@subscriptions';
 
-export const saveSubscriptions = async (list) => {
+export const getSubscriptions = async () => {
   try {
-    await AsyncStorage.setItem(KEY, JSON.stringify(list));
+    const jsonValue = await AsyncStorage.getItem(STORAGE_KEY);
+    return jsonValue != null ? JSON.parse(jsonValue) : [];
   } catch (e) {
-    console.error('Save error:', e);
-  }
-};
-
-export const loadSubscriptions = async () => {
-  try {
-    const raw = await AsyncStorage.getItem(KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
+    console.error('Error reading subscriptions', e);
     return [];
   }
 };
 
+export const saveSubscription = async (subscription) => {
+  try {
+    const currentSubs = await getSubscriptions();
+    // If updating existing (has ID), find and replace. Else add new.
+    const existingIndex = currentSubs.findIndex(s => s.id === subscription.id);
+    
+    let newSubs;
+    if (existingIndex >= 0) {
+      newSubs = [...currentSubs];
+      newSubs[existingIndex] = subscription;
+    } else {
+      newSubs = [...currentSubs, subscription];
+    }
+    
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newSubs));
+    return newSubs;
+  } catch (e) {
+    console.error('Error saving subscription', e);
+    throw e;
+  }
+};
+
 export const deleteSubscription = async (id) => {
-  const list = await loadSubscriptions();
-  const updated = list.filter((s) => s.id !== id);
-  await saveSubscriptions(updated);
-  return updated;
+  try {
+    const currentSubs = await getSubscriptions();
+    const newSubs = currentSubs.filter(s => s.id !== id);
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newSubs));
+    return newSubs;
+  } catch (e) {
+    console.error('Error deleting subscription', e);
+    throw e;
+  }
 };
