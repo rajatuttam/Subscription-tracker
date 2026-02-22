@@ -1,62 +1,53 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import { StatusBar } from 'expo-status-bar';
-import * as Notifications from 'expo-notifications';
-
-import WelcomeScreen      from './src/screens/WelcomeScreen';
-import HomeScreen         from './src/screens/HomeScreen';
+import { ThemeProvider } from './src/context/ThemeContext';
+import { registerForPushNotificationsAsync } from './src/utils/notifications';
+import WelcomeScreen from './src/screens/WelcomeScreen';
+import HomeScreen from './src/screens/HomeScreen';
 import AddSubscriptionScreen from './src/screens/AddSubscriptionScreen';
+import { StatusBar } from 'expo-status-bar';
+import { useTheme } from './src/context/ThemeContext';
 
 const Stack = createStackNavigator();
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
-
-export default function App() {
-  const [showWelcome, setShowWelcome] = useState(true);
-
-  useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener(() => {});
-    return () => sub.remove();
-  }, []);
-
-  // Show welcome/splash for ~2 seconds then animate out
-  if (showWelcome) {
-    return <WelcomeScreen onFinish={() => setShowWelcome(false)} />;
-  }
+const AppContent = () => {
+  const { isDarkMode } = useTheme();
 
   return (
-    <NavigationContainer>
-      <StatusBar style="auto" />
-      <Stack.Navigator
-        screenOptions={{
-          headerShown: false,
-          presentation: 'card',
-          cardStyleInterpolator: ({ current: { progress } }) => ({
-            cardStyle: {
-              opacity: progress.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, 1],
-              }),
-              transform: [{
-                translateY: progress.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [40, 0],
-                }),
-              }],
-            },
-          }),
-        }}
-      >
-        <Stack.Screen name="Home"            component={HomeScreen} />
-        <Stack.Screen name="AddSubscription" component={AddSubscriptionScreen} />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <>
+      <StatusBar style={isDarkMode ? 'light' : 'dark'} />
+      <NavigationContainer>
+        <Stack.Navigator initialRouteName="Welcome">
+          <Stack.Screen 
+            name="Welcome" 
+            component={WelcomeScreen} 
+            options={{ headerShown: false }} 
+          />
+          <Stack.Screen 
+            name="Home" 
+            component={HomeScreen} 
+            options={{ headerShown: false }} 
+          />
+          <Stack.Screen 
+            name="AddSubscription" 
+            component={AddSubscriptionScreen} 
+            options={{ headerShown: false }} 
+          />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </>
+  );
+};
+
+export default function App() {
+  useEffect(() => {
+    registerForPushNotificationsAsync();
+  }, []);
+
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
   );
 }

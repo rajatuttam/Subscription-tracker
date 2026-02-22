@@ -1,34 +1,31 @@
 {
   "expo": {
-    "name": "Subscription Tracker",
+    "name": "subscription tracker",
     "slug": "subscription-tracker",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "splash": {
-      "backgroundColor": "#000000"
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
     },
     "android": {
-      "package": "com.rjt.subs",
       "adaptiveIcon": {
-        "backgroundColor": "#000000"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
       },
-      "permissions": [
-        "android.permission.NOTIFICATIONS",
-        "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.VIBRATE",
-        "android.permission.SCHEDULE_EXACT_ALARM"
-      ]
+      "package": "com.rjt.subs"
     },
-    "plugins": [
-      [
-        "expo-notifications",
-        {
-          "color": "#ffffff",
-          "sounds": []
-        }
-      ]
-    ]
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
   }
 }
