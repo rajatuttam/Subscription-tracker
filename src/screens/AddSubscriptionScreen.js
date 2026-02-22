@@ -1,262 +1,305 @@
 import React, { useState } from 'react';
-import {
-  View, Text, TextInput, TouchableOpacity,
-  StyleSheet, ScrollView, Alert,
-  Platform, KeyboardAvoidingView,
-} from 'react-native';
-import { loadSubscriptions, saveSubscriptions } from '../utils/storage';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { useTheme } from '../context/ThemeContext';
+import { saveSubscription } from '../utils/storage';
 import { scheduleRenewalNotification } from '../utils/notifications';
-import { DARK, LIGHT } from '../utils/theme';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-const CYCLES = ['Monthly', 'Yearly', 'Weekly'];
+const AddSubscriptionScreen = ({ navigation }) => {
+  const { colors, isDarkMode } = useTheme();
+  
+  const [name, setName] = useState('');
+  const [price, setPrice] = useState('');
+  const [cycle, setCycle] = useState('Monthly');
+  const [day, setDay] = useState('');
+  const [month, setMonth] = useState('');
+  const [year, setYear] = useState(new Date().getFullYear().toString());
+  const [notes, setNotes] = useState('');
 
-const PRESETS = [
-  { name:'Netflix',          price:'649' },
-  { name:'Hotstar',          price:'299' },
-  { name:'Amazon Prime',     price:'299' },
-  { name:'Spotify',          price:'119' },
-  { name:'YouTube Premium',  price:'189' },
-  { name:'Claude',           price:'1700' },
-  { name:'Apple Music',      price:'119' },
-  { name:'Zee5',             price:'149' },
-  { name:'SonyLiv',          price:'299' },
-  { name:'JioCinema',        price:'29' },
-  { name:'Adobe CC',         price:'4230' },
-  { name:'LinkedIn Premium', price:'2600' },
-];
+  const cycles = ['Monthly', 'Yearly', 'Weekly'];
+  const quickAdds = ['Netflix', 'Spotify', 'YouTube Premium', 'Claude', 'Apple One'];
 
-// Simple DD / MM / YYYY date input — works perfectly in Termux
-function DateInput({ value, onChange, T }) {
-  const p     = value ? new Date(value) : null;
-  const [d, setD] = useState(p ? String(p.getDate()).padStart(2,'0') : '');
-  const [m, setM] = useState(p ? String(p.getMonth()+1).padStart(2,'0') : '');
-  const [y, setY] = useState(p ? String(p.getFullYear()) : '');
+  const handleSave = async () => {
+    if (!name || !price || !day || !month || !year) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
 
-  const tryUpdate = (dd, mm, yy) => {
-    if (dd && mm && yy && yy.length === 4) {
-      const date = new Date(parseInt(yy), parseInt(mm)-1, parseInt(dd));
-      if (!isNaN(date.getTime())) onChange(date.toISOString());
+    // Validate date
+    const d = parseInt(day);
+    const m = parseInt(month);
+    const y = parseInt(year);
+
+    if (isNaN(d) || isNaN(m) || isNaN(y) || d < 1 || d > 31 || m < 1 || m > 12) {
+        Alert.alert('Error', 'Invalid date');
+        return;
+    }
+
+    // Create date object (Month is 0-indexed in JS Date)
+    const renewalDate = new Date(y, m - 1, d);
+    
+    // Check if valid date
+    if (renewalDate.getMonth() !== m - 1) {
+         Alert.alert('Error', 'Invalid date (e.g. Feb 30)');
+         return;
+    }
+
+    const newSub = {
+      id: Date.now().toString(),
+      name,
+      price: parseFloat(price).toFixed(2),
+      cycle,
+      renewalDate: renewalDate.toISOString(),
+      notes,
+      color: getRandomColor()
+    };
+
+    try {
+      await saveSubscription(newSub);
+      await scheduleRenewalNotification(name, renewalDate);
+      navigation.goBack();
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save subscription');
+      console.error(error);
     }
   };
 
-  const inputStyle = [s.dateBox, { backgroundColor: T.inputBg, borderColor: T.border, color: T.text }];
+  const getRandomColor = () => {
+      const colors = ['#E50914', '#1DB954', '#FF0000', '#D2691E', '#000000', '#0A84FF', '#FF9500'];
+      return colors[Math.floor(Math.random() * colors.length)];
+  };
 
-  return (
-    <View style={{ flexDirection:'row', alignItems:'center' }}>
-      <TextInput style={inputStyle} placeholder="DD" placeholderTextColor={T.textDim}
-        keyboardType="numeric" maxLength={2} value={d}
-        onChangeText={v => { setD(v); tryUpdate(v, m, y); }} />
-      <Text style={[s.dateSep, { color: T.textMuted }]}>/</Text>
-      <TextInput style={inputStyle} placeholder="MM" placeholderTextColor={T.textDim}
-        keyboardType="numeric" maxLength={2} value={m}
-        onChangeText={v => { setM(v); tryUpdate(d, v, y); }} />
-      <Text style={[s.dateSep, { color: T.textMuted }]}>/</Text>
-      <TextInput style={[inputStyle, { width:78 }]} placeholder="YYYY" placeholderTextColor={T.textDim}
-        keyboardType="numeric" maxLength={4} value={y}
-        onChangeText={v => { setY(v); tryUpdate(d, m, v); }} />
-    </View>
-  );
-}
-
-export default function AddSubscriptionScreen({ navigation, route }) {
-  // Receive isDark from HomeScreen so colors stay in sync
-  const isDark = route?.params?.isDark ?? true;
-  const T = isDark ? DARK : LIGHT;
-
-  const [name,   setName]   = useState('');
-  const [price,  setPrice]  = useState('');
-  const [cycle,  setCycle]  = useState('Monthly');
-  const [date,   setDate]   = useState('');
-  const [notes,  setNotes]  = useState('');
-
-  const applyPreset = (p) => { setName(p.name); setPrice(p.price); };
-
-  const handleSave = async () => {
-    if (!name.trim())                      return Alert.alert('Required', 'Enter subscription name.');
-    if (!price || isNaN(parseFloat(price))) return Alert.alert('Required', 'Enter a valid price.');
-    if (!date)                             return Alert.alert('Required', 'Enter renewal date.');
-
-    const sub = {
-      id: Date.now().toString(),
-      name: name.trim(),
-      price: parseFloat(price).toFixed(2),
-      cycle,
-      renewalDate: date,
-      notes: notes.trim(),
-      createdAt: new Date().toISOString(),
-    };
-    const existing = await loadSubscriptions();
-    await saveSubscriptions([...existing, sub]);
-    await scheduleRenewalNotification(sub);
-    navigation.goBack();
+  const handleQuickAdd = (appName) => {
+      setName(appName);
+      // Pre-fill some defaults if known could go here
   };
 
   return (
-    <View style={[s.root, { backgroundColor: T.bg }]}>
-
-      {/* ── Fixed Back Button ── */}
-      <View style={[s.topBar, {
-        backgroundColor: T.bg,
-        borderBottomColor: T.border,
-      }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={s.backBtn}>
-          <View style={[s.backCircle, { backgroundColor: T.surface, borderColor: T.border }]}>
-            <Text style={[s.backArrow, { color: T.text }]}>‹</Text>
-          </View>
-          <Text style={[s.backTxt, { color: T.textMuted }]}>Back</Text>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={styles.header}>
+        {/* Fixed Back Button */}
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+             <Text style={[styles.backText, { color: colors.text }]}>← Back</Text>
         </TouchableOpacity>
-        <Text style={[s.screenTitle, { color: T.text }]}>New Subscription</Text>
-        <View style={{ width: 80 }} />
+        <Text style={[styles.title, { color: colors.text }]}>New Subscription</Text>
       </View>
 
-      {/* ── Scrollable Form ── */}
-      <KeyboardAvoidingView
-        style={{ flex:1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
       >
-        <ScrollView
-          contentContainerStyle={s.form}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Quick Add Presets */}
-          <Text style={[s.label, { color: T.textMuted }]}>QUICK ADD</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom:4 }}>
-            {PRESETS.map(p => (
-              <TouchableOpacity key={p.name}
-                style={[s.chip, { backgroundColor: T.chipBg, borderColor: T.chipBorder }]}
-                onPress={() => applyPreset(p)}>
-                <Text style={[s.chipName, { color: T.chipText }]}>{p.name}</Text>
-                <Text style={[s.chipPrice, { color: T.textDim }]}>₹{p.price}</Text>
-              </TouchableOpacity>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        
+        {/* Quick Add */}
+        <Text style={[styles.label, { color: colors.textSecondary }]}>QUICK ADD</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickAddScroll}>
+            {quickAdds.map(app => (
+                <TouchableOpacity 
+                    key={app} 
+                    style={[styles.chip, { backgroundColor: isDarkMode ? '#333' : '#eee' }]}
+                    onPress={() => handleQuickAdd(app)}
+                >
+                    <Text style={{ color: colors.text }}>{app}</Text>
+                </TouchableOpacity>
             ))}
-          </ScrollView>
-
-          {/* Name */}
-          <Text style={[s.label, { color: T.textMuted }]}>NAME</Text>
-          <TextInput
-            style={[s.input, { backgroundColor: T.inputBg, borderColor: T.border, color: T.text }]}
-            placeholder="e.g. Netflix, Hotstar..." placeholderTextColor={T.textDim}
-            value={name} onChangeText={setName}
-          />
-
-          {/* Price */}
-          <Text style={[s.label, { color: T.textMuted }]}>PRICE (₹)</Text>
-          <View style={{ flexDirection:'row', alignItems:'center', gap:12 }}>
-            <Text style={[s.rupee, { color: T.text }]}>₹</Text>
-            <TextInput
-              style={[s.input, { flex:1, backgroundColor: T.inputBg, borderColor: T.border, color: T.text }]}
-              placeholder="0" placeholderTextColor={T.textDim}
-              keyboardType="decimal-pad" value={price} onChangeText={setPrice}
-            />
-          </View>
-
-          {/* Billing Cycle */}
-          <Text style={[s.label, { color: T.textMuted }]}>BILLING CYCLE</Text>
-          <View style={{ flexDirection:'row', gap:10 }}>
-            {CYCLES.map(cy => (
-              <TouchableOpacity key={cy}
-                style={[s.cycleBtn, {
-                  backgroundColor: cycle === cy ? T.accent : T.inputBg,
-                  borderColor: cycle === cy ? T.accent : T.border,
-                }]}
-                onPress={() => setCycle(cy)}>
-                <Text style={[s.cycleTxt, { color: cycle === cy ? T.accentText : T.textMuted }]}>
-                  {cy}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Renewal Date */}
-          <Text style={[s.label, { color: T.textMuted }]}>NEXT RENEWAL DATE</Text>
-          <DateInput value={date} onChange={setDate} T={T} />
-          <Text style={[s.hint, { color: T.textDim }]}>🔔 Reminder 2 days before renewal</Text>
-
-          {/* Notes */}
-          <Text style={[s.label, { color: T.textMuted }]}>NOTES (OPTIONAL)</Text>
-          <TextInput
-            style={[s.input, s.notesInput, { backgroundColor: T.inputBg, borderColor: T.border, color: T.text }]}
-            placeholder="e.g. Family plan, shared account..." placeholderTextColor={T.textDim}
-            multiline value={notes} onChangeText={setNotes}
-          />
-
-          {/* Save Button */}
-          <TouchableOpacity
-            style={[s.saveBtn, { backgroundColor: T.accent,
-              shadowColor: T.fabShadow, shadowOffset:{width:0,height:6},
-              shadowOpacity:0.2, shadowRadius:14, elevation:8,
-            }]}
-            onPress={handleSave}
-          >
-            <Text style={[s.saveTxt, { color: T.accentText }]}>Save Subscription</Text>
-          </TouchableOpacity>
-
-          <View style={{ height: 40 }} />
         </ScrollView>
+
+        {/* Name */}
+        <Text style={[styles.label, { color: colors.textSecondary }]}>NAME</Text>
+        <TextInput
+            style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
+            value={name}
+            onChangeText={setName}
+            placeholder="e.g. Netflix"
+            placeholderTextColor={colors.textSecondary}
+        />
+
+        {/* Price */}
+        <Text style={[styles.label, { color: colors.textSecondary }]}>PRICE ($)</Text>
+        <TextInput
+            style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
+            value={price}
+            onChangeText={setPrice}
+            placeholder="0.00"
+            keyboardType="numeric"
+            placeholderTextColor={colors.textSecondary}
+        />
+
+        {/* Billing Cycle */}
+        <Text style={[styles.label, { color: colors.textSecondary }]}>BILLING CYCLE</Text>
+        <View style={styles.cycleContainer}>
+            {cycles.map(c => (
+                <TouchableOpacity 
+                    key={c} 
+                    style={[
+                        styles.cycleButton, 
+                        cycle === c ? { backgroundColor: '#fff' } : { backgroundColor: isDarkMode ? '#111' : '#ddd' },
+                        cycle === c && !isDarkMode ? { backgroundColor: '#000' } : {} 
+                    ]}
+                    onPress={() => setCycle(c)}
+                >
+                    <Text style={{ 
+                        color: cycle === c ? (isDarkMode ? '#000' : '#fff') : colors.textSecondary,
+                        fontWeight: cycle === c ? 'bold' : 'normal'
+                    }}>
+                        {c}
+                    </Text>
+                </TouchableOpacity>
+            ))}
+        </View>
+
+        {/* Renewal Date */}
+        <Text style={[styles.label, { color: colors.textSecondary }]}>NEXT RENEWAL DATE</Text>
+        <View style={styles.dateRow}>
+            <TextInput
+                style={[styles.dateInput, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
+                value={day}
+                onChangeText={setDay}
+                placeholder="DD"
+                keyboardType="numeric"
+                maxLength={2}
+                placeholderTextColor={colors.textSecondary}
+            />
+            <Text style={{ color: colors.textSecondary, fontSize: 20 }}>/</Text>
+            <TextInput
+                style={[styles.dateInput, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
+                value={month}
+                onChangeText={setMonth}
+                placeholder="MM"
+                keyboardType="numeric"
+                maxLength={2}
+                placeholderTextColor={colors.textSecondary}
+            />
+            <Text style={{ color: colors.textSecondary, fontSize: 20 }}>/</Text>
+            <TextInput
+                style={[styles.dateInput, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border, flex: 2 }]}
+                value={year}
+                onChangeText={setYear}
+                placeholder="YYYY"
+                keyboardType="numeric"
+                maxLength={4}
+                placeholderTextColor={colors.textSecondary}
+            />
+        </View>
+        <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
+            You'll be reminded 2 days before.
+        </Text>
+
+        {/* Notes */}
+        <Text style={[styles.label, { color: colors.textSecondary, marginTop: 20 }]}>NOTES (OPTIONAL)</Text>
+        <TextInput
+            style={[styles.input, { height: 80, textAlignVertical: 'top', backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
+            value={notes}
+            onChangeText={setNotes}
+            multiline
+            placeholder="Add notes..."
+            placeholderTextColor={colors.textSecondary}
+        />
+
+        <TouchableOpacity 
+            style={[styles.saveButton, { backgroundColor: isDarkMode ? '#fff' : '#000' }]}
+            onPress={handleSave}
+        >
+            <Text style={[styles.saveButtonText, { color: isDarkMode ? '#000' : '#fff' }]}>Save Subscription</Text>
+        </TouchableOpacity>
+
+      </ScrollView>
       </KeyboardAvoidingView>
-    </View>
+    </SafeAreaView>
   );
-}
+};
 
-const MONO = Platform.OS === 'ios' ? 'Courier New' : 'monospace';
-
-const s = StyleSheet.create({
-  root: { flex:1 },
-
-  // Fixed top bar
-  topBar: {
-    flexDirection:'row', alignItems:'center', justifyContent:'space-between',
-    paddingHorizontal:16,
-    paddingTop: Platform.OS === 'android' ? 48 : 56,
-    paddingBottom:14,
-    borderBottomWidth:1,
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
   },
-  backBtn: { flexDirection:'row', alignItems:'center', gap:8, width:80 },
-  backCircle: {
-    width:34, height:34, borderRadius:17,
-    borderWidth:1, alignItems:'center', justifyContent:'center',
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    marginBottom: 10,
   },
-  backArrow: { fontSize:24, fontWeight:'300', lineHeight:28 },
-  backTxt: { fontSize:14, fontFamily:MONO },
-  screenTitle: { fontSize:17, fontWeight:'800', letterSpacing:-0.3, textAlign:'center' },
-
-  form: { paddingHorizontal:20, paddingTop:20 },
-
+  backButton: {
+    position: 'absolute',
+    left: 20,
+    top: 10,
+    zIndex: 10,
+    padding: 5, // enlarge touch area
+  },
+  backText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  title: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+  },
   label: {
-    fontSize:11, letterSpacing:1.8, fontFamily:MONO,
-    marginBottom:10, marginTop:22,
+    fontSize: 12,
+    marginTop: 20,
+    marginBottom: 8,
+    fontWeight: '600',
+    letterSpacing: 1,
+  },
+  quickAddScroll: {
+    flexDirection: 'row',
+    marginBottom: 10,
+  },
+  chip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 10,
   },
   input: {
-    borderRadius:14, borderWidth:1, padding:15,
-    fontSize:16, fontFamily:MONO,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    fontSize: 16,
   },
-  rupee: { fontSize:28, fontWeight:'700' },
-  notesInput: { height:88, textAlignVertical:'top' },
-  hint: { fontSize:11, fontFamily:MONO, marginTop:8 },
-
-  chip: {
-    borderRadius:20, paddingHorizontal:14, paddingVertical:9,
-    marginRight:8, borderWidth:1, alignItems:'center',
+  cycleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
-  chipName: { fontSize:12, fontWeight:'600' },
-  chipPrice: { fontSize:10, marginTop:2, fontFamily:MONO },
-
-  dateBox: {
-    borderRadius:12, borderWidth:1, padding:13,
-    width:56, textAlign:'center', fontSize:16, fontFamily:MONO,
+  cycleButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginHorizontal: 4,
   },
-  dateSep: { fontSize:22, fontWeight:'200', marginHorizontal:8 },
-
-  cycleBtn: {
-    flex:1, paddingVertical:13, borderRadius:12,
-    alignItems:'center', borderWidth:1,
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  cycleTxt: { fontSize:13, fontWeight:'700' },
-
-  saveBtn: {
-    borderRadius:16, paddingVertical:18,
-    alignItems:'center', marginTop:32,
+  dateInput: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    fontSize: 16,
+    textAlign: 'center',
+    marginHorizontal: 5,
   },
-  saveTxt: { fontWeight:'900', fontSize:16, letterSpacing:0.3 },
+  saveButton: {
+    marginTop: 40,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  saveButtonText: {
+    fontWeight: 'bold',
+    fontSize: 16,
+  }
 });
+
+export default AddSubscriptionScreen;
