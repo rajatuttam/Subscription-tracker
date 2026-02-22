@@ -16,24 +16,19 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { loadSubscriptions, deleteSubscription } from '../utils/storage';
 import { scheduleAllNotifications, requestPermissions } from '../utils/notifications';
-import Svg, { Path, Circle, Line, Rect, Text as SvgText } from 'react-native-svg';
-
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CHART_WIDTH = SCREEN_WIDTH - 48;
-const CHART_HEIGHT = 160;
+const CHART_HEIGHT = 140;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-// ─── Mini Spend Chart (SVG Bar Chart) ──────────────────────────────────────────
+// ─── Spend Chart (Pure View — no SVG dependency) ──────────────────────────────
 function SpendChart({ subscriptions }) {
   const now = new Date();
   const currentMonth = now.getMonth();
 
-  // Build last 6 months of spend data
   const monthData = Array.from({ length: 6 }, (_, i) => {
     const monthIndex = (currentMonth - 5 + i + 12) % 12;
-    // For simplicity, current month shows real spend; past months show slightly varied (demo)
     const base = subscriptions.reduce((sum, s) => sum + parseFloat(s.price || 0), 0);
-    const variance = i === 5 ? 0 : (Math.sin(i * 1.3) * base * 0.2);
+    const variance = i === 5 ? 0 : Math.sin(i * 1.3) * base * 0.2;
     return {
       label: MONTHS[monthIndex],
       value: Math.max(0, parseFloat((base + variance).toFixed(2))),
@@ -41,56 +36,50 @@ function SpendChart({ subscriptions }) {
   });
 
   const maxVal = Math.max(...monthData.map((d) => d.value), 1);
-  const barWidth = (CHART_WIDTH - 40) / 6 - 8;
-  const padLeft = 36;
 
   return (
     <View style={styles.chartContainer}>
       <Text style={styles.chartTitle}>Monthly Spend</Text>
-      <Svg width={CHART_WIDTH} height={CHART_HEIGHT + 30}>
-        {/* Y axis lines */}
-        {[0, 0.25, 0.5, 0.75, 1].map((ratio, i) => {
-          const y = 10 + (1 - ratio) * (CHART_HEIGHT - 20);
-          const val = (maxVal * ratio).toFixed(0);
-          return (
-            <React.Fragment key={i}>
-              <Line
-                x1={padLeft} y1={y}
-                x2={CHART_WIDTH} y2={y}
-                stroke="#222" strokeWidth="1"
-              />
-              <SvgText x={padLeft - 4} y={y + 4} fontSize="9" fill="#555" textAnchor="end">
-                ${val}
-              </SvgText>
-            </React.Fragment>
-          );
-        })}
+
+      {/* Y-axis labels + bars area */}
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: CHART_HEIGHT }}>
+        {/* Y-axis */}
+        <View style={{ width: 38, height: CHART_HEIGHT, justifyContent: 'space-between', alignItems: 'flex-end', paddingRight: 6, paddingBottom: 20 }}>
+          {[1, 0.75, 0.5, 0.25, 0].map((ratio, i) => (
+            <Text key={i} style={styles.chartYLabel}>${(maxVal * ratio).toFixed(0)}</Text>
+          ))}
+        </View>
 
         {/* Bars */}
-        {monthData.map((d, i) => {
-          const barHeight = maxVal > 0 ? ((d.value / maxVal) * (CHART_HEIGHT - 20)) : 0;
-          const x = padLeft + i * (barWidth + 8);
-          const y = 10 + (CHART_HEIGHT - 20) - barHeight;
-          const isLast = i === 5;
-          return (
-            <React.Fragment key={i}>
-              <Rect
-                x={x} y={y}
-                width={barWidth} height={barHeight}
-                fill={isLast ? '#fff' : '#2a2a2a'}
-                rx={3}
-              />
-              <SvgText
-                x={x + barWidth / 2} y={CHART_HEIGHT + 20}
-                fontSize="9" fill={isLast ? '#fff' : '#555'}
-                textAnchor="middle"
-              >
-                {d.label}
-              </SvgText>
-            </React.Fragment>
-          );
-        })}
-      </Svg>
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'flex-end', height: CHART_HEIGHT, paddingBottom: 20 }}>
+          {monthData.map((d, i) => {
+            const isLast = i === 5;
+            const barHeightPct = maxVal > 0 ? (d.value / maxVal) : 0;
+            const barHeight = Math.max(4, barHeightPct * (CHART_HEIGHT - 20));
+            return (
+              <View key={i} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: CHART_HEIGHT - 20 }}>
+                {/* Value label on top of current month bar */}
+                {isLast && d.value > 0 && (
+                  <Text style={styles.chartBarValue}>${d.value.toFixed(0)}</Text>
+                )}
+                <View style={[
+                  styles.chartBar,
+                  { height: barHeight, backgroundColor: isLast ? '#fff' : '#222' },
+                ]} />
+              </View>
+            );
+          })}
+        </View>
+      </View>
+
+      {/* X-axis labels */}
+      <View style={{ flexDirection: 'row', marginLeft: 38 }}>
+        {monthData.map((d, i) => (
+          <Text key={i} style={[styles.chartXLabel, i === 5 && { color: '#fff' }]}>
+            {d.label}
+          </Text>
+        ))}
+      </View>
     </View>
   );
 }
@@ -376,6 +365,30 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
     marginBottom: 12,
+  },
+  chartBar: {
+    width: '70%',
+    borderRadius: 4,
+  },
+  chartBarValue: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '700',
+    marginBottom: 3,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  chartYLabel: {
+    color: '#333',
+    fontSize: 8,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  chartXLabel: {
+    flex: 1,
+    color: '#444',
+    fontSize: 9,
+    textAlign: 'center',
+    marginTop: 6,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
 
   // Sections
